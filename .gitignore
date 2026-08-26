@@ -1,0 +1,59 @@
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+
+# Local application state and generated reading data
+config.json
+reading_memory.sqlite3
+reading_memory.sqlite3-*
+*.sqlite
+*.sqlite3
+*.db
+reports/
+.generation_cache/
+captures/
+screenshots/
+
+# Python runtimes and installed dependencies
+runtime/
+.venv/
+venv/
+env/
+site-packages/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging and test output
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs, temporary files, and editor state
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+.idea/
+.vscode/
+.vs/
+
+# Windows and macOS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
