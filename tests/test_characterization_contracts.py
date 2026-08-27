@@ -29,7 +29,7 @@ def _sha256_json(value: object) -> str:
     encoded = json.dumps(
         value,
         ensure_ascii=False,
-        sort_keys=True,
+        sort_keys=False,
         separators=(",", ":"),
     )
     return _sha256_text(encoded)
@@ -247,14 +247,14 @@ EXPECTED_PROMPT_SHA256 = {
 }
 
 EXPECTED_SCHEMA_SHA256 = {
-    "page_response": "6a2f091659e5442b5ca6152d8f71826b988dc60e38900a76c41f5f068f4d5a51",
-    "chunk_response": "51623e9f2a2566c70da12c093df619b60b16d9a1820a6a098d0522bd03468ba8",
-    "chapter_response": "d0aeb6d02e823cc3f4f4bd681af1d9f844604f5c2becc4b2bf1351ef67a4d307",
-    "final_pass_4_response": "c2c5c1f4ce30a550c3d9e33d0beba20de9f93c84a45501ac641599180c5945c7",
-    "report_response": "cb868bc52ba610dc21823c8f6cf5f539fb53abf32d6606b040eb8f65e27bdc34",
-    "page_output_example": "b7f696f10fdb63e625952745daf2dd66868b15212fbd91aa12c1ded97b9cef70",
-    "chunk_output_example": "3d671c1a1bd163950a1668e31b4563acc26ac1ef52a2d34b274aa2b35966470a",
-    "chapter_output_example": "bff0e484d423f9aa056ec016b79b57fc9027c9e0d0b1489db1662cd0e5c2015a",
+    "page_response": "f4a316342dfc480777c40d42390ce37e0f9b6f947687018459878cbbd911a9cb",
+    "chunk_response": "c5f80a38a335d464f02ad012eeb1533b44c37395bf4a3f7b2b0a72681a4a78d7",
+    "chapter_response": "b6c0243cb2c9042f5f3905409a0d6861c234ab6ea237c99f5336ca8627ece699",
+    "final_pass_4_response": "a06dc68b5dcfe55b655cb3efd0b799804421b07fa66acacf1da00028b3caca72",
+    "report_response": "3d5eaea86e6e090506e20cd6dcebc708d30da4fdda18ae126840bc609ef74514",
+    "page_output_example": "3fed597a461b00e7a86bf462bf8f1d4e5a7fba8c47d4953d272b919b953686f2",
+    "chunk_output_example": "32a087cec9e951d9fca780d6533070a14e2195fa7d591b23108286c91859fb5b",
+    "chapter_output_example": "8816b0cf55f6e6a1a33b9ceb3bfd06f6f78f8f2a1c39098bdc99ebdfcb92da72",
 }
 
 
@@ -272,6 +272,11 @@ class PromptAndSchemaCharacterizationTests(unittest.TestCase):
             for name, schema in schema_cases().items()
         }
         self.assertEqual(actual, EXPECTED_SCHEMA_SHA256)
+
+    def test_json_schema_snapshot_is_key_order_sensitive(self) -> None:
+        first = {"type": "object", "required": ["value"]}
+        reordered = {"required": ["value"], "type": "object"}
+        self.assertNotEqual(_sha256_json(first), _sha256_json(reordered))
 
 
 if __name__ == "__main__":
