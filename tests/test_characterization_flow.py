@@ -8,12 +8,38 @@ from PIL import Image
 
 from reading_assistant.analyzer import PageAnalyzer
 from reading_assistant.config import AppConfig
+from reading_assistant.errors import DuplicatePageError, ProtectedCaptureError
 from reading_assistant.integrator import ChunkIntegrator
 from reading_assistant.memory import ReadingMemory
 from reading_assistant.models import Rect, WindowInfo
 from reading_assistant.orchestrator import ReaderCallbacks, ReaderState, ReadingOrchestrator
 from reading_assistant.reports import REPORT_FILES, ReportGenerator
 from tests.fakes import FakeController, FakeLLMClient, SequenceFrameSource, sample_image
+
+
+def _error_callbacks(events: list[tuple[str, object]]) -> ReaderCallbacks:
+    def preview(image: Image.Image | None) -> None:
+        if image is None:
+            events.append(("preview", None))
+            return
+        events.append(("preview", image.size))
+        image.close()
+
+    return ReaderCallbacks(
+        status=lambda message: events.append(("status", message)),
+        warning=lambda message: events.append(("warning", message)),
+        preview=preview,
+        metrics=lambda metrics: events.append(
+            (
+                "metrics",
+                (
+                    metrics["read_pages"],
+                    metrics["duplicate_pages"],
+                    metrics["failed_pages"],
+                ),
+            )
+        ),
+    )
 
 
 class PagePipelineCharacterizationTests(unittest.TestCase):
@@ -81,6 +107,97 @@ class PagePipelineCharacterizationTests(unittest.TestCase):
                     ("preview", None),
                 ],
             )
+            memory.close()
+        source.close()
+
+    def test_duplicate_page_error_callbacks_keep_the_current_order(self) -> None:
+        original = sample_image(7)
+        source = SequenceFrameSource([original, original])
+        original.close()
+        events: list[tuple[str, object]] = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            memory = ReadingMemory(root / "memory.sqlite3")
+            fake = FakeLLMClient()
+            orchestrator = ReadingOrchestrator(
+                AppConfig(chunk_size=20, spread_mode="1ページ", total_pages=2),
+                memory,
+                source,
+                PageAnalyzer(fake),
+                ChunkIntegrator(fake),
+                ReportGenerator(fake),
+                FakeController(),
+                root / "reports",
+                _error_callbacks(events),
+            )
+            orchestrator.new_session("重複ページ確認", 2)
+            window = WindowInfo(1, "Sample Reader", Rect(0, 0, 640, 900))
+            orchestrator.set_capture_target(window, window.rect)
+            orchestrator.start()
+            orchestrator.read_current_page()
+
+            events.clear()
+            with self.assertRaises(DuplicatePageError):
+                orchestrator.read_current_page()
+
+            self.assertEqual(orchestrator.state, ReaderState.ERROR)
+            self.assertEqual(
+                events,
+                [
+                    ("status", "現在ページを画面から取得しています…"),
+                    ("preview", (640, 900)),
+                    ("warning", "前ページと同じ画面です。新しいページとして記録しません。"),
+                    ("metrics", (1, 1, 0)),
+                    ("preview", None),
+                ],
+            )
+            self.assertEqual(fake.vision_calls, 1)
+            memory.close()
+        source.close()
+
+    def test_black_screen_error_callbacks_keep_the_current_order(self) -> None:
+        black = Image.new("RGB", (640, 900), "black")
+        source = SequenceFrameSource([black])
+        black.close()
+        events: list[tuple[str, object]] = []
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            memory = ReadingMemory(root / "memory.sqlite3")
+            fake = FakeLLMClient()
+            orchestrator = ReadingOrchestrator(
+                AppConfig(chunk_size=20, spread_mode="1ページ", total_pages=1),
+                memory,
+                source,
+                PageAnalyzer(fake),
+                ChunkIntegrator(fake),
+                ReportGenerator(fake),
+                FakeController(),
+                root / "reports",
+                _error_callbacks(events),
+            )
+            orchestrator.new_session("黒画面確認", 1)
+            window = WindowInfo(1, "Sample Reader", Rect(0, 0, 640, 900))
+            orchestrator.set_capture_target(window, window.rect)
+            orchestrator.start()
+
+            events.clear()
+            with self.assertRaises(ProtectedCaptureError):
+                orchestrator.read_current_page()
+
+            self.assertEqual(orchestrator.state, ReaderState.ERROR)
+            self.assertEqual(
+                events,
+                [
+                    ("status", "現在ページを画面から取得しています…"),
+                    ("preview", (640, 900)),
+                    ("warning", "黒画面または単色画面です。キャプチャ保護を回避せず停止します。"),
+                    ("metrics", (0, 0, 1)),
+                    ("preview", None),
+                ],
+            )
+            self.assertEqual(fake.vision_calls, 0)
             memory.close()
         source.close()
 
