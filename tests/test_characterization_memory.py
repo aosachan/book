@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
 import shutil
 import tempfile
 import unittest
@@ -17,6 +20,62 @@ from reading_assistant.models import (
 
 
 class ExistingSessionCharacterizationTests(unittest.TestCase):
+    def test_current_version_fixed_sqlite_fixture_remains_resumable(self) -> None:
+        fixture_path = (
+            Path(__file__).parent
+            / "fixtures"
+            / "current_version_session.sqlite3.gz.b64"
+        )
+        compressed = base64.b64decode(
+            "".join(fixture_path.read_text(encoding="ascii").split())
+        )
+        database_bytes = gzip.decompress(compressed)
+        self.assertTrue(database_bytes.startswith(b"SQLite format 3\x00"))
+        self.assertEqual(len(database_bytes), 110592)
+        self.assertEqual(
+            hashlib.sha256(database_bytes).hexdigest(),
+            "5e0a6fe962eeb21394c39f1e1972a8fc50bc84130aae621c0311bcbba7c2edcc",
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "current-version-fixture.sqlite3"
+            database_path.write_bytes(database_bytes)
+            memory = ReadingMemory(database_path)
+            try:
+                session = memory.get_session(1)
+                self.assertEqual(session["title"], "固定SQLite fixture v1")
+                self.assertEqual(session["status"], "paused")
+                self.assertEqual(session["quality"], "BALANCED")
+                self.assertEqual(session["chunk_size"], 20)
+                self.assertEqual(session["read_pages"], 1)
+                self.assertEqual(session["last_integrated_page"], 1)
+                self.assertNotIn("api_key", session["settings"])
+                self.assertEqual(
+                    session["capture"]["capture_rect"],
+                    {"left": 40, "top": 60, "right": 760, "bottom": 940},
+                )
+                self.assertEqual(memory.next_page_index(1), 2)
+                self.assertEqual(memory.next_capture_index(1), 2)
+                self.assertEqual(memory.last_page_hash(1), "fixture-page-hash-001")
+
+                context = memory.recent_context(1)
+                self.assertEqual(context["recent_pages"], [])
+                self.assertEqual(context["recent_chunks"], [])
+                self.assertEqual(context["last_chapter_checkpoint"]["end_page"], 1)
+                self.assertEqual(
+                    context["last_chapter_checkpoint"]["carryover"]["immediate_situation"],
+                    "ミナが時計の記録を発見し、調査を始めた直後。",
+                )
+                self.assertEqual(context["current_character_states"][0]["name"], "ミナ")
+
+                material = memory.all_semantic_material(1)
+                self.assertEqual(len(material["page_notes"]), 1)
+                self.assertEqual(len(material["chunk_summaries"]), 1)
+                self.assertEqual(len(material["chapter_summaries"]), 1)
+                self.assertEqual(material["user_notes"][0]["note"], "時計の時刻に注目")
+            finally:
+                memory.close()
+
     def test_existing_sqlite_copy_resumes_with_the_same_semantic_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
